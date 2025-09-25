@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CAET / ACT – Full dApp (Wallet • Migrate • Admin • Price • Explorer)</title>
+<script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{--bg:#0b0e13;--card:#121721;--ink:#e6e9ef;--muted:#9aa4b2;--pri:#0ea5e9;--ok:#22c55e;--bad:#ef4444;--warn:#f59e0b}
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,Segoe UI,Arial}
+  header{padding:14px 16px;border-bottom:1px solid #1f2937;display:flex;gap:10px;align-items:center;justify-content:space-between}
+  h1{margin:0;font-size:16px;font-weight:700}
+  .grid{display:grid;gap:12px;padding:14px}
+  .card{background:var(--card);border:1px solid #1f2937;border-radius:14px;padding:12px}
+  label{display:block;margin:8px 0 6px;color:var(--muted);font-size:12px}
+  input,textarea,select{width:100%;background:#0f1420;color:var(--ink);border:1px solid #1f2937;border-radius:10px;padding:10px 12px}
+  textarea{min-height:100px;font-family:ui-monospace,Consolas,monospace}
+  .row{display:flex;gap:8px;align-items:center}
+  .row>*{flex:1}
+  button{background:#1f2937;border:1px solid #303946;color:#e8eef7;border-radius:12px;padding:10px 14px;cursor:pointer}
+  button.pri{background:var(--pri);border-color:#0284c7;color:#001018;font-weight:700}
+  button.ok{background:var(--ok);border-color:#16a34a;color:#00140a;font-weight:700}
+  button.bad{background:var(--bad);border-color:#b91c1c}
+  .pill{display:inline-flex;gap:8px;align-items:center;background:#101522;border:1px solid #223046;border-radius:999px;padding:8px 12px}
+  .tabs{display:flex;gap:8px;flex-wrap:wrap}
+  .tab{padding:8px 12px;border-radius:999px;border:1px solid #243244;color:#c2cada;cursor:pointer}
+  .tab.active{background:var(--pri);color:#001018;border-color:#0284c7}
+  .muted{color:var(--muted)}
+  .mono{font-family:ui-monospace,Consolas,monospace}
+  table{width:100%;border-collapse:collapse}
+  th,td{padding:8px;border-bottom:1px solid #202736;vertical-align:top}
+  th{color:#c7ced9;text-align:left}
+  .flex-between{display:flex;justify-content:space-between;align-items:center}
+  .hide{display:none}
+  .price{font-size:28px;font-weight:800}
+  .right{float:right}
+  canvas{width:100%;max-height:220px}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>CAET / ACT – dApp</h1><div class="muted" id="netInfo">ไม่เชื่อมต่อ</div></div>
+  <div class="row" style="flex:0 0 auto">
+    <button id="btnSwitch" title="สลับไป Testnet">สลับ Testnet</button>
+    <button id="btnConnect" class="pri">เชื่อม MetaMask</button>
+  </div>
+</header>
+
+<div class="grid">
+
+  <!-- SETTINGS -->
+  <section class="card">
+    <div class="tabs" id="tabs">
+      <div class="tab active" data-tab="wallet">Wallet</div>
+      <div class="tab" data-tab="migrate">Migrate</div>
+      <div class="tab" data-tab="admin">Admin</div>
+      <div class="tab" data-tab="price">Price</div>
+      <div class="tab" data-tab="explorer">Explorer</div>
+    </div>
+  </section>
+
+  <!-- CONNECTION + CONTRACTS -->
+  <section class="card" id="panel-wallet">
+    <h3>1) เชื่อมต่อ + ตั้งค่า Token</h3>
+    <div class="row">
+      <div>
+        <label>RPC URL</label>
+        <input id="rpc" value="https://bsc-testnet.public.blastapi.io">
+      </div>
+      <div>
+        <label>ChainId (hex)</label>
+        <input id="chainId" value="0x61">
+      </div>
+    </div>
+
+    <div class="row">
+      <div>
+        <label>Old Token (ที่เผาออกจากเครือข่ายเดิม)</label>
+        <input id="oldToken" placeholder="0xOldToken..." />
+      </div>
+      <div>
+        <label>New Token (บนเครือข่ายใหม่)</label>
+        <input id="newToken" placeholder="0xNewToken..." />
+      </div>
+    </div>
+
+    <div>
+      <label>Migrator Contract (ถ้ามี)</label>
+      <input id="migrator" placeholder="0xMigrator..." />
+    </div>
+
+    <label>ABI (JSON Array) – มีมาให้พื้นฐานแล้ว แก้ได้</label>
+    <textarea id="abi">[
+  {"constant":true,"inputs":[],"name":"name","outputs":[{"name":"","type":"string"}],"type":"function"},
+  {"constant":true,"inputs":[],"name":"symbol","outputs":[{"name":"","type":"string"}],"type":"function"},
+  {"constant":true,"inputs":[],"name":"decimals","outputs":[{"name":"","type":"uint8"}],"type":"function"},
+  {"constant":true,"inputs":[{"name":"owner","type":"address"}],"name":"balanceOf","outputs":[{"name":"","type":"uint256"}],"type":"function"},
+  {"constant":true,"inputs":[],"name":"totalSupply","outputs":[{"name":"","type":"uint256"}],"type":"function"},
+  {"constant":true,"inputs":[],"name":"owner","outputs":[{"name":"","type":"address"}],"type":"function"},
+  {"constant":true,"inputs":[{"name":"owner","type":"address"},{"name":"spender","type":"address"}],"name":"allowance","outputs":[{"name":"","type":"uint256"}],"type":"function"},
+  {"constant":false,"inputs":[{"name":"spender","type":"address"},{"name":"amount","type":"uint256"}],"name":"approve","outputs":[{"name":"","type":"bool"}],"type":"function"},
+  {"constant":false,"inputs":[{"name":"to","type":"address"},{"name":"amount","type":"uint256"}],"name":"transfer","outputs":[{"name":"","type":"bool"}],"type":"function"},
+  {"constant":false,"inputs":[{"name":"from","type":"address"},{"name":"to","type":"address"},{"name":"amount","type":"uint256"}],"name":"transferFrom","outputs":[{"name":"","type":"bool"}],"type":"function"},
+  {"constant":false,"inputs":[{"name":"amount","type":"uint256"}],"name":"burn","outputs":[],"type":"function"},
+  {"constant":false,"inputs":[{"name":"to","type":"address"},{"name":"amount","type":"uint256"}],"name":"mint","outputs":[],"type":"function"},
+  {"anonymous":false,"inputs":[{"indexed":true,"name":"from","type":"address"},{"indexed":true,"name":"to","type":"address"},{"indexed":false,"name":"value","type":"uint256"}],"name":"Transfer","type":"event"}
+]</textarea>
+
+    <div class="row" style="margin-top:10px">
+      <button class="pri" id="btnInit">โหลดสัญญา</button>
+      <button id="btnBalances">เช็คยอด</button>
+    </div>
+
+    <div class="row" style="margin-top:10px">
+      <div class="card" style="flex:1">
+        <div class="muted">ฉัน (address)</div>
+        <div id="me" class="mono"></div>
+        <div class="muted">Owner (ของโทเคนใหม่)</div>
+        <div id="owner" class="mono"></div>
+      </div>
+      <div class="card" style="flex:1">
+        <div class="muted">ยอดคงเหลือ</div>
+        <div>Old: <span id="balOld">-</span></div>
+        <div>New: <span id="balNew">-</span></div>
+      </div>
+    </div>
+
+    <h3 style="margin-top:14px">2) โอนปกติ</h3>
+    <div class="row">
+      <input id="to" placeholder="ปลายทาง 0x..." />
+      <input id="amt" placeholder="จำนวน (หน่วย human)" />
+    </div>
+    <div class="row">
+      <button class="ok" id="btnSendOld">โอนด้วย Old</button>
+      <button class="ok" id="btnSendNew">โอนด้วย New</button>
+    </div>
+  </section>
+
+  <!-- MIGRATE -->
+  <section class="card hide" id="panel-migrate">
+    <h3>Migrate ACT→ACT20 / Old→New</h3>
+    <div class="muted">เลือกหนึ่งวิธี: (1) ผ่านสัญญา Migrator (แนะนำ) หรือ (2) โหมด Burn→Mint</div>
+    <div class="row" style="margin-top:8px">
+      <input id="migAmount" placeholder="จำนวน (human)" />
+    </div>
+    <div class="row">
+      <button class="pri" id="btnViaMigrator">Migrate ผ่าน Migrator</button>
+      <button class="warn" id="btnBurnMint" title="ต้องเป็น owner ของโทเคนใหม่">โหมด Burn → Mint</button>
+    </div>
+    <div class="muted" style="margin-top:8px">โหมด Burn→Mint: จะเรียก <code>burn</code> บน Old และ <code>mint</code> ไปที่ address เดิมบน New (ต้องเป็น owner)</div>
+  </section>
+
+  <!-- ADMIN -->
+  <section class="card hide" id="panel-admin">
+    <div class="flex-between">
+      <h3>หน้า Admin (เฉพาะ owner โทเคนใหม่)</h3>
+      <div id="adminStatus" class="pill">สถานะ: <span class="mono" id="isOwner">Unknown</span></div>
+    </div>
+    <div class="row">
+      <input id="mintTo" placeholder="mint ให้ใคร 0x..." />
+      <input id="mintAmt" placeholder="จำนวน (human)" />
+      <button class="ok" id="btnMint">Mint</button>
+    </div>
+    <div style="margin-top:8px">
+      <label>Airdrop (CSV: address,amount ต่อบรรทัด)</label>
+      <textarea id="airdropList" placeholder="0xabc...,100
+0xdef...,250"></textarea>
+      <div class="row">
+        <button id="btnAirdrop">เริ่ม Airdrop (batch ทีละ 50)</button>
+        <div class="muted">* ตรวจให้ชัวร์ก่อนกด — เรียก on-chain ครั้งละหลาย tx</div>
+      </div>
+    </div>
+
+    <h3 style="margin-top:14px">ลิงก์ช่วยสภาพคล่อง (PancakeSwap)</h3>
+    <div class="row">
+      <input id="psToken" placeholder="Token address (CAET/ACT20)" />
+      <input id="psBase" placeholder="Base (เช่น 0x... WBNB/USDT)" />
+    </div>
+    <div class="row">
+      <a id="psAdd" target="_blank"><button>เพิ่ม Liquidity</button></a>
+      <a id="psSwap" target="_blank"><button>สร้างลิงก์ Swap</button></a>
+    </div>
+  </section>
+
+  <!-- PRICE -->
+  <section class="card hide" id="panel-price">
+    <h3>ราคาแบบสด + กราฟ</h3>
+    <div class="row">
+      <div>
+        <label>Coingecko ID (ถ้ามี)</label>
+        <input id="cgId" value="binancecoin">
+      </div>
+      <div>
+        <label>DexScreener Pair URL (ถ้ามี)</label>
+        <input id="dsUrl" placeholder="https://api.dexscreener.com/latest/dex/pairs/bsc/0xPAIR..." />
+      </div>
+      <div style="flex:0 0 auto;align-self:flex-end">
+        <button id="btnPrice" class="pri">อัปเดตราคา</button>
+      </div>
+    </div>
+    <div class="row">
+      <div class="card" style="flex:1">
+        <div class="muted">ราคาอ้างอิง</div>
+        <div class="price" id="px">฿ —</div>
+        <div class="muted">เปลี่ยน 24H: <span id="chg">—</span></div>
+      </div>
+      <div class="card" style="flex:2">
+        <canvas id="chart"></canvas>
+      </div>
+    </div>
+  </section>
+
+  <!-- EXPLORER -->
+  <section class="card hide" id="panel-explorer">
+    <div class="flex-between">
+      <h3>สำรวจประวัติ Transfer (on-chain)</h3>
+      <div class="row" style="flex:0 0 auto">
+        <input id="expToken" placeholder="ใส่ Token address" style="width:320px">
+        <input id="expBlocks" value="5000" style="width:110px">
+        <button id="btnScan">สแกน</button>
+      </div>
+    </div>
+    <div class="muted">จะดึง Log อีเวนต์ <code>Transfer</code> ย้อนหลังตามจำนวนบล็อกที่กำหนด</div>
+    <div style="overflow:auto">
+      <table id="tbl">
+        <thead><tr><th>block</th><th>tx</th><th>from → to</th><th>amount</th></tr></thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- LOG -->
+  <section class="card">
+    <div class="flex-between">
+      <div>Console</div>
+      <button id="clear">clear</button>
+    </div>
+    <div id="log" class="mono" style="white-space:pre-wrap;max-height:220px;overflow:auto"></div>
+  </section>
+</div>
+
+<script>
+const $ = (id)=>document.getElementById(id);
+const log = (m)=>{$('log').textContent += (typeof m==='string'? m: JSON.stringify(m)) + "\n";}
+$('clear').onclick = ()=>$('log').textContent='';
+
+let provider, signer, me;
+let oldC, newC, migratorC, abi, decimalsOld=18, decimalsNew=18;
+
+const tabs = document.querySelectorAll('.tab');
+tabs.forEach(t=>{
+  t.onclick=()=>{
+    tabs.forEach(x=>x.classList.remove('active'));
+    t.classList.add('active');
+    const id = t.dataset.tab;
+    document.querySelectorAll('[id^="panel-"]').forEach(p=>p.classList.add('hide'));
+    $('panel-'+id).classList.remove('hide');
+  }
+});
+
+$('btnSwitch').onclick = async()=>{
+  const chainId = $('chainId').value.trim();
+  const rpc = $('rpc').value.trim();
+  if(!window.ethereum){alert('ติดตั้ง MetaMask ก่อน');return;}
+  try{
+    await ethereum.request({ method:'wallet_switchEthereumChain', params:[{chainId}] });
+  }catch(e){
+    if(e.code===4902){
+      await ethereum.request({ method:'wallet_addEthereumChain', params:[{
+        chainId, chainName:'BSC Testnet', nativeCurrency:{name:'tBNB',symbol:'tBNB',decimals:18}, rpcUrls:[rpc], blockExplorerUrls:['https://testnet.bscscan.com']
+      }]});
+    }else{ alert(e.message); }
+  }
+};
+
+$('btnConnect').onclick = async()=>{
+  if(!window.ethereum){alert('กรุณาติดตั้ง MetaMask'); return;}
+  await ethereum.request({method:'eth_requestAccounts'});
+  provider = new ethers.providers.Web3Provider(window.ethereum);
+  signer = provider.getSigner();
+  me = await signer.getAddress();
+  const net = await provider.getNetwork();
+  $('netInfo').textContent = `เชื่อมต่อ: chainId=${net.chainId}`;
+  $('me').textContent = me;
+  log('Connected: '+me);
+};
+
+$('btnInit').onclick = async()=>{
+  try{
+    abi = JSON.parse($('abi').value);
+  }catch(e){ alert('ABI ไม่ใช่ JSON ที่ถูกต้อง'); return;}
+  if(!provider){ provider = new ethers.providers.JsonRpcProvider($('rpc').value.trim()); $('netInfo').textContent='อ่านผ่าน RPC (read-only)'; }
+  const old = $('oldToken').value.trim();
+  const nw  = $('newToken').value.trim();
+  const mig = $('migrator').value.trim();
+
+  if(old){ oldC = new ethers.Contract(old, abi, signer||provider); decimalsOld = (await oldC.decimals().catch(()=>18)) || 18; }
+  if(nw){ newC  = new ethers.Contract(nw,  abi, signer||provider); decimalsNew = (await newC.decimals().catch(()=>18)) || 18; }
+  if(mig){ migratorC = new ethers.Contract(mig, abi, signer||provider); }
+
+  if(newC){
+    const ow = await newC.owner().catch(()=>null);
+    $('owner').textContent = ow || '(ไม่พบ owner())';
+    $('isOwner').textContent = (ow && me && ow.toLowerCase()===me.toLowerCase()) ? 'OWNER' : 'NOT OWNER';
+  }
+  log('Contracts loaded.');
+};
+
+$('btnBalances').onclick = async()=>{
+  if(!me){ if(signer) me = await signer.getAddress(); else {alert('ยังไม่เชื่อมต่อ'); return;} }
+  if(oldC){ const b = await oldC.balanceOf(me); $('balOld').textContent = fmt(b,decimalsOld); }
+  if(newC){ const b = await newC.balanceOf(me); $('balNew').textContent = fmt(b,decimalsNew); }
+};
+
+$('btnSendOld').onclick = ()=> doTransfer(oldC, $('amt').value, $('to').value, decimalsOld);
+$('btnSendNew').onclick = ()=> doTransfer(newC,  $('amt').value, $('to').value, decimalsNew);
+
+async function doTransfer(token, amountHuman, to, dec){
+  if(!token){ alert('ยังไม่ได้ตั้งค่า Token'); return; }
+  if(!signer){ alert('เชื่อม MetaMask ก่อน'); return; }
+  const amt = ethers.utils.parseUnits(amountHuman||'0', dec);
+  const tx = await token.connect(signer).transfer(to, amt);
+  log('ส่ง… '+tx.hash); await tx.wait(); log('สำเร็จ');
+}
+
+/* MIGRATION */
+$('btnViaMigrator').onclick = async()=>{
+  if(!migratorC || !oldC){ alert('ใส่ Migrator และ Old token ก่อน'); return; }
+  const amount = $('migAmount').value||'0';
+  const amt = ethers.utils.parseUnits(amount, decimalsOld);
+  const addr = migratorC.address;
+  // approve → migrate()
+  const curAllowance = await oldC.allowance(me, addr);
+  if(curAllowance.lt(amt)){
+    log('Approve…'); const ap = await oldC.connect(signer).approve(addr, amt); await ap.wait();
+  }
+  log('Call migrate…'); // ฟังก์ชันชื่อ migrate อาจต่างกัน ปรับตามสัญญาคุณ
+  try{
+    const tx = await migratorC.connect(signer).migrate(amt);
+    log('tx: '+tx.hash); await tx.wait(); log('migrate เสร็จ');
+  }catch(e){ alert('เรียก migrate ไม่ได้: ปรับ ABI/ชื่อฟังก์ชันให้ตรงสัญญาคุณ'); log(e); }
+};
+
+$('btnBurnMint').onclick = async()=>{
+  if(!oldC || !newC){ alert('ต้องตั้งค่า Old & New token'); return; }
+  const amount = $('migAmount').value||'0';
+  const amtOld = ethers.utils.parseUnits(amount, decimalsOld);
+  log('เผา (burn) บน Old…');
+  try{
+    const tx1 = await oldC.connect(signer).burn(amtOld);
+    log('tx burn: '+tx1.hash); await tx1.wait();
+  }catch(e){ alert('เรียก burn ไม่ได้ (ปรับ ABI หรือใช้ transfer → dead address)'); log(e); return; }
+  // mint บนโทเคนใหม่ (ต้อง owner)
+  const ow = await newC.owner().catch(()=>null);
+  if(!ow || ow.toLowerCase()!==me.toLowerCase()){ alert('ต้องเป็น owner ของ Token ใหม่เพื่อ mint'); return; }
+  const amtNew = ethers.utils.parseUnits(amount, decimalsNew);
+  const tx2 = await newC.connect(signer).mint(me, amtNew);
+  log('tx mint: '+tx2.hash); await tx2.wait(); log('เสร็จสิ้น Burn→Mint');
+};
+
+/* ADMIN */
+$('btnMint').onclick = async()=>{
+  if(!newC){ alert('ตั้งค่า New token ก่อน'); return; }
+  const to = $('mintTo').value.trim(), amount = $('mintAmt').value||'0';
+  const ow = await newC.owner().catch(()=>null);
+  if(!ow || ow.toLowerCase()!==me.toLowerCase()){ alert('ต้องเป็น owner'); return; }
+  const amt = ethers.utils.parseUnits(amount, decimalsNew);
+  const tx = await newC.connect(signer).mint(to, amt); log('mint: '+tx.hash); await tx.wait(); log('สำเร็จ');
+};
+
+$('btnAirdrop').onclick = async()=>{
+  if(!newC){ alert('ตั้งค่า New token ก่อน'); return; }
+  const ow = await newC.owner().catch(()=>null);
+  if(!ow || ow.toLowerCase()!==me.toLowerCase()){ alert('ต้องเป็น owner'); return; }
+  const lines = $('airdropList').value.trim().split(/\r?\n/).filter(Boolean);
+  const batch = 50; // ปลอดภัยกว่าทีละเยอะ ๆ
+  for(let i=0;i<lines.length;i++){
+    const [to,amt] = lines[i].split(',').map(s=>s.trim());
+    const v = ethers.utils.parseUnits(amt, decimalsNew);
+    const tx = await newC.connect(signer).mint(to, v);
+    log(`(${i+1}/${lines.length}) ${to} ${amt} → ${tx.hash}`);
+    await tx.wait();
+    if((i+1)%batch===0) log('พักเป็นชุด…');
+  }
+  log('Airdrop เสร็จ');
+};
+
+// Pancake links
+const pcBase = 'https://pancakeswap.finance';
+$('psAdd').onclick = (e)=>{e.preventDefault(); openPc('add');};
+$('psSwap').onclick = (e)=>{e.preventDefault(); openPc('swap');};
+function openPc(mode){
+  const t = $('psToken').value.trim(), b = $('psBase').value.trim();
+  if(!(t&&b)){ alert('ใส่โทเคนกับ Base ก่อน'); return; }
+  const url = mode==='add'
+    ? `${pcBase}/add/${b}/${t}`
+    : `${pcBase}/swap?outputCurrency=${t}`;
+  window.open(url,'_blank');
+}
+
+/* PRICE */
+let ch; // chart
+$('btnPrice').onclick = loadPrice;
+async function loadPrice(){
+  const cg = $('cgId').value.trim();
+  const ds = $('dsUrl').value.trim();
+  let price = null, chg = null;
+  try{
+    if(cg){
+      const r = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(cg)}&vs_currencies=thb&include_24hr_change=true`).then(r=>r.json());
+      const o = r[cg]; if(o){ price = o.thb; chg = o.thb_24h_change; }
+    }
+  }catch(e){ log('coingecko error'); }
+  if(price==null && ds){
+    try{
+      const j = await fetch(ds).then(r=>r.json());
+      const p = (j.pair||j.pairs?.[0])?.priceUsd;
+      if(p){ price = Number(p)*36; chg = (j.pair||j.pairs?.[0])?.priceChange?.h24 ?? null; }
+    }catch(e){ log('dexscreener error'); }
+  }
+  if(price!=null){ $('px').textContent = '฿ '+Number(price).toFixed(2); }
+  if(chg!=null){ $('chg').textContent = Number(chg).toFixed(2)+'%'; $('chg').style.color = chg>=0 ? 'var(--ok)' : 'var(--bad)'; }
+
+  // append to chart
+  if(!ch){
+    const ctx = $('chart').getContext('2d');
+    ch = new Chart(ctx,{type:'line',data:{labels:[],datasets:[{data:[],borderColor:'#e5e7eb',borderWidth:2,pointRadius:0,tension:.35}]},options:{plugins:{legend:{display:false}},scales:{x:{display:false},y:{display:false}}}});
+  }
+  if(price!=null){
+    const t = new Date().toLocaleTimeString();
+    ch.data.labels.push(t);
+    ch.data.datasets[0].data.push(price);
+    if(ch.data.labels.length>60){ ch.data.labels.shift(); ch.data.datasets[0].data.shift(); }
+    ch.update();
+  }
+}
+
+/* EXPLORER */
+$('btnScan').onclick = async()=>{
+  try{
+    const addr = $('expToken').value.trim() || (oldC?.address || newC?.address);
+    if(!addr){ alert('ใส่ Token address'); return; }
+    const blocks = parseInt($('expBlocks').value||'5000',10);
+    const now = await (provider||new ethers.providers.JsonRpcProvider($('rpc').value)).getBlockNumber();
+    const from = Math.max(1, now - blocks);
+    const iface = new ethers.utils.Interface(abi);
+    const topic = iface.getEventTopic('Transfer');
+    const logs = await (provider||new ethers.providers.JsonRpcProvider($('rpc').value)).getLogs({fromBlock:from, toBlock:'latest', address:addr, topics:[topic]});
+    const tbody = document.querySelector('#tbl tbody'); tbody.innerHTML='';
+    logs.slice(-300).reverse().forEach(l=>{
+      const ev = iface.parseLog(l);
+      const tr = document.createElement('tr');
+      const amt = ev.args.value;
+      tr.innerHTML = `<td>${l.blockNumber}</td>
+        <td class="mono">${l.transactionHash.slice(0,10)}…</td>
+        <td class="mono">${ev.args.from.slice(0,10)}… → ${ev.args.to.slice(0,10)}…</td>
+        <td>${fmt(amt, decimalsNew||18)}</td>`;
+      tbody.appendChild(tr);
+    });
+    log(`ดึงได้ ${logs.length} รายการ`);
+  }catch(e){ alert('อ่าน Log ไม่ได้'); log(e); }
+};
+
+/* helpers */
+function fmt(bn, dec=18){ try{ return Number(ethers.utils.formatUnits(bn,dec)).toLocaleString(); }catch{ return bn.toString(); } }
+
+/* auto UI wires */
+$('panel-wallet').classList.remove('hide');
+setInterval(()=>{ if(document.querySelector('.tab.active')?.dataset.tab==='price') loadPrice(); }, 15000);
+</script>
+</body>
+</html>
