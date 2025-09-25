@@ -49,7 +49,6 @@
 
 <div class="grid">
 
-  <!-- SETTINGS -->
   <section class="card">
     <div class="tabs" id="tabs">
       <div class="tab active" data-tab="wallet">Wallet</div>
@@ -60,7 +59,6 @@
     </div>
   </section>
 
-  <!-- CONNECTION + CONTRACTS -->
   <section class="card" id="panel-wallet">
     <h3>1) เชื่อมต่อ + ตั้งค่า Token</h3>
     <div class="row">
@@ -137,7 +135,6 @@
     </div>
   </section>
 
-  <!-- MIGRATE -->
   <section class="card hide" id="panel-migrate">
     <h3>Migrate ACT→ACT20 / Old→New</h3>
     <div class="muted">เลือกหนึ่งวิธี: (1) ผ่านสัญญา Migrator (แนะนำ) หรือ (2) โหมด Burn→Mint</div>
@@ -151,7 +148,6 @@
     <div class="muted" style="margin-top:8px">โหมด Burn→Mint: จะเรียก <code>burn</code> บน Old และ <code>mint</code> ไปที่ address เดิมบน New (ต้องเป็น owner)</div>
   </section>
 
-  <!-- ADMIN -->
   <section class="card hide" id="panel-admin">
     <div class="flex-between">
       <h3>หน้า Admin (เฉพาะ owner โทเคนใหม่)</h3>
@@ -183,7 +179,6 @@
     </div>
   </section>
 
-  <!-- PRICE -->
   <section class="card hide" id="panel-price">
     <h3>ราคาแบบสด + กราฟ</h3>
     <div class="row">
@@ -211,7 +206,6 @@
     </div>
   </section>
 
-  <!-- EXPLORER -->
   <section class="card hide" id="panel-explorer">
     <div class="flex-between">
       <h3>สำรวจประวัติ Transfer (on-chain)</h3>
@@ -230,7 +224,6 @@
     </div>
   </section>
 
-  <!-- LOG -->
   <section class="card">
     <div class="flex-between">
       <div>Console</div>
@@ -400,41 +393,91 @@ function openPc(mode){
 }
 
 /* PRICE */
-let ch; // chart
 $('btnPrice').onclick = loadPrice;
-async function loadPrice(){
+
+// ฟังก์ชันใหม่: ดึงเรท THB แบบสดๆ เพื่อความแม่นยำ
+async function getThbRate() {
+  try {
+    // เราจะใช้ API ที่ฟรีและไม่ต้องใช้ key ในการดึงเรทแลกเปลี่ยน
+    const response = await fetch('https://api.exchangerate-api.com/v4/latest/USD');
+    if (!response.ok) return 36.5; // ถ้าดึงไม่ได้ ให้ใช้ค่าประมาณ
+    const data = await response.json();
+    return data.rates.THB || 36.5;
+  } catch (error) {
+    console.warn("ไม่สามารถดึงเรท THB ได้, ใช้ค่าประมาณ:", error);
+    return 36.5; // กรณี error ให้ใช้ค่าประมาณ
+  }
+}
+
+// ฟังก์ชัน loadPrice ที่ปรับปรุงใหม่ทั้งหมด
+async function loadPrice() {
   const cg = $('cgId').value.trim();
   const ds = $('dsUrl').value.trim();
   let price = null, chg = null;
-  try{
-    if(cg){
-      const r = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(cg)}&vs_currencies=thb&include_24hr_change=true`).then(r=>r.json());
-      const o = r[cg]; if(o){ price = o.thb; chg = o.thb_24h_change; }
-    }
-  }catch(e){ log('coingecko error'); }
-  if(price==null && ds){
-    try{
-      const j = await fetch(ds).then(r=>r.json());
-      const p = (j.pair||j.pairs?.[0])?.priceUsd;
-      if(p){ price = Number(p)*36; chg = (j.pair||j.pairs?.[0])?.priceChange?.h24 ?? null; }
-    }catch(e){ log('dexscreener error'); }
-  }
-  if(price!=null){ $('px').textContent = '฿ '+Number(price).toFixed(2); }
-  if(chg!=null){ $('chg').textContent = Number(chg).toFixed(2)+'%'; $('chg').style.color = chg>=0 ? 'var(--ok)' : 'var(--bad)'; }
 
-  // append to chart
-  if(!ch){
-    const ctx = $('chart').getContext('2d');
-    ch = new Chart(ctx,{type:'line',data:{labels:[],datasets:[{data:[],borderColor:'#e5e7eb',borderWidth:2,pointRadius:0,tension:.35}]},options:{plugins:{legend:{display:false}},scales:{x:{display:false},y:{display:false}}}});
+  log(`กำลังอัปเดตราคา... (Coingecko: ${cg || 'N/A'}, DexScreener: ${ds ? 'Yes' : 'No'})`);
+
+  try {
+    // --- ลอง Coingecko ก่อน ---
+    if (cg) {
+      const response = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${encodeURIComponent(cg)}&vs_currencies=thb&include_24hr_change=true`);
+      const data = await response.json();
+      const o = data[cg];
+      if (o && o.thb) {
+        price = o.thb;
+        chg = o.thb_24h_change;
+        log('ดึงราคาจาก Coingecko สำเร็จ');
+      }
+    }
+
+    // --- ถ้า Coingecko ไม่ได้ ให้ลอง DexScreener ---
+    if (price === null && ds) {
+      log('Coingecko ไม่ได้ผล, กำลังลอง DexScreener...');
+      const response = await fetch(ds);
+      const j = await response.json();
+      const pairData = j.pair || j.pairs?.[0];
+      
+      if (pairData?.priceUsd) {
+        const thbRate = await getThbRate(); // เรียกใช้ฟังก์ชันใหม่เพื่อดึงเรท THB
+        log(`เรท USD/THB ปัจจุบัน: ${thbRate.toFixed(2)}`);
+        price = Number(pairData.priceUsd) * thbRate; // คำนวณเป็นบาทด้วยเรทจริง
+        chg = pairData.priceChange?.h24 ?? null;
+        log('ดึงราคาจาก DexScreener สำเร็จ');
+      }
+    }
+  } catch (e) {
+    log('เกิดข้อผิดพลาดในการดึงราคา: ' + e.message);
   }
-  if(price!=null){
-    const t = new Date().toLocaleTimeString();
-    ch.data.labels.push(t);
-    ch.data.datasets[0].data.push(price);
-    if(ch.data.labels.length>60){ ch.data.labels.shift(); ch.data.datasets[0].data.shift(); }
-    ch.update();
+
+  // --- อัปเดต UI ---
+  if (price !== null) {
+    $('px').textContent = '฿ ' + Number(price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 4 });
+  } else {
+    log('ไม่สามารถดึงราคาจากแหล่งข้อมูลใดๆ ได้');
+  }
+
+  if (chg !== null) {
+    $('chg').textContent = Number(chg).toFixed(2) + '%';
+    $('chg').style.color = chg >= 0 ? 'var(--ok)' : 'var(--bad)';
+  }
+
+  // --- อัปเดต Chart ---
+  if (price !== null) {
+    if (!window.ch) { // ใช้ window.ch เพื่อให้เป็น global scope
+      const ctx = $('chart').getContext('2d');
+      window.ch = new Chart(ctx, { type: 'line', data: { labels: [], datasets: [{ data: [], borderColor: '#e5e7eb', borderWidth: 2, pointRadius: 0, tension: .35 }] }, options: { plugins: { legend: { display: false } }, scales: { x: { display: false }, y: { display: false } } } });
+    }
+    const t = new Date().toLocaleTimeString('th-TH');
+    window.ch.data.labels.push(t);
+    window.ch.data.datasets[0].data.push(price);
+    if (window.ch.data.labels.length > 60) {
+      window.ch.data.labels.shift();
+      window.ch.data.datasets[0].data.shift();
+    }
+    window.ch.update();
   }
 }
+
 
 /* EXPLORER */
 $('btnScan').onclick = async()=>{
